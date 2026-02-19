@@ -1,26 +1,55 @@
 pipeline {
     agent any
 
+    environment {
+        SERVER_IP      = '172.31.26.189'
+        SSH_CREDENTIAL = 'node-app'
+        REPO_URL       = 'https://github.com/iamtruptimane/node-js-app-CICD.git'
+        BRANCH         = 'main'
+        REMOTE_USER    = 'ubuntu'
+        REMOTE_PATH    = '/home/ubuntu/node-app'
+    }
+
     stages {
-        stage('pull') {
+        stage('Clone Repository') {
             steps {
-               git branch: 'main', url: 'https://github.com/iamtruptimane/node-js-app-CICD.git'
+                git branch: "${BRANCH}", url: "${REPO_URL}"
             }
         }
-        stage('build') {
+
+        stage('Upload Files to EC2') {
             steps {
-                echo 'building..'
+                sshagent([SSH_CREDENTIAL]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} 'mkdir -p ${REMOTE_PATH}'
+                        scp -o StrictHostKeyChecking=no -r * ${REMOTE_USER}@${SERVER_IP}:${REMOTE_PATH}/
+                    """
+                }
             }
         }
-        stage('test') {
+
+        stage('Install Dependencies & Start App') {
             steps {
-                echo 'testing....'
-            }
-        }
-         stage('Deploy') {
-            steps {
-                echo 'Deploying....'
+                sshagent([SSH_CREDENTIAL]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} '
+                            cd ${REMOTE_PATH} &&
+                            npm install &&
+                            pm2 start app.js --name node-app || pm2 restart node-app
+                        '
+                    """
+                }
             }
         }
     }
+
+    post {
+        success {
+            echo '✅ Application deployed successfully!'
+        }
+        failure {
+            echo '❌ Deployment failed.'
+        }
+    }
 }
+
