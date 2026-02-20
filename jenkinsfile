@@ -2,54 +2,48 @@ pipeline {
     agent any
 
     environment {
-        SERVER_IP      = '172.31.26.189'
-        SSH_CREDENTIAL = 'node-app-key'
-        REPO_URL       = 'https://github.com/iamtruptimane/node-js-app-CICD.git'
-        BRANCH         = 'main'
-        REMOTE_USER    = 'ubuntu'
-        REMOTE_PATH    = '/home/ubuntu/node-app'
+        SSH_CRED = 'node-app-key'
+        SERVER_IP = '172.31.26.189'
+        REMOTE_USER = 'ubuntu'
+        APP_DIR = '/home/ubuntu/pythonapp'
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Clone Repo') {
             steps {
-                git branch: "${BRANCH}", url: "${REPO_URL}"
+                git url: 'https://github.com/rohi-del/pythonapp.git', branch: 'master'
             }
         }
 
-        stage('Upload Files to EC2') {
+        stage('Deploy to Server') {
             steps {
-                sshagent([SSH_CREDENTIAL]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} 'mkdir -p ${REMOTE_PATH}'
-                        scp -o StrictHostKeyChecking=no -r * ${REMOTE_USER}@${SERVER_IP}:${REMOTE_PATH}/
-                    """
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} "mkdir -p ${APP_DIR}"
+                        scp -r  README.md app.py requirements.txt test ${REMOTE_USER}@${SERVER_IP}:${APP_DIR}/
+                    '''
                 }
             }
         }
 
-        stage('Install Dependencies & Start App') {
+        stage('Install & Run App') {
             steps {
-                sshagent([SSH_CREDENTIAL]) {
+                sshagent(["${SSH_CRED}"]) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} '
-                            cd ${REMOTE_PATH} &&
-                            npm install &&
-                            pm2 start app.js --name node-app || pm2 restart node-app
+                            sudo apt update &&
+                            sudo apt install -y python3-venv python3-pip &&
+                            cd ${APP_DIR} &&
+                            python3 -m venv venv &&
+                            source venv/bin/activate &&
+                            pip install --upgrade pip &&
+                            pip install -r requirements.txt &&
+                            nohup python3 app.py --host=0.0.0.0 > app.log 2>&1 &
+                            exit 0
                         '
                     """
                 }
             }
         }
     }
-
-    post {
-        success {
-            echo '✅ Application deployed successfully!'
-        }
-        failure {
-            echo '❌ Deployment failed.'
-        }
-    }
 }
-
